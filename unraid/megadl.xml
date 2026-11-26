@@ -1,19 +1,19 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>MegaDL</Name>
-  <Repository>ghcr.io/YOUR_GITHUB_USERNAME/megadl:latest</Repository>
-  <Registry>https://github.com/YOUR_GITHUB_USERNAME/megadl/pkgs/container/megadl</Registry>
+  <Repository>ghcr.io/Augmentumz/megadl:latest</Repository>
+  <Registry>https://github.com/Augmentumz/megadl/pkgs/container/megadl</Registry>
   <Network>bridge</Network>
   <MyIP/>
   <Shell>bash</Shell>
   <Privileged>false</Privileged>
-  <Support>https://github.com/YOUR_GITHUB_USERNAME/megadl/issues</Support>
-  <Project>https://github.com/YOUR_GITHUB_USERNAME/megadl</Project>
+  <Support>https://github.com/Augmentumz/megadl/issues</Support>
+  <Project>https://github.com/Augmentumz/megadl</Project>
   <Overview>Download mega.nz file and folder links to your array from a web GUI. Sign in to your MEGA account to use its transfer quota, pick the destination folder for each download, pause, resume or remove downloads, and limit download speed. Uses MEGAcmd, MEGA's official command-line client.</Overview>
   <Category>Downloaders:</Category>
   <WebUI>http://[IP]:[PORT:8080]/</WebUI>
-  <TemplateURL>https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/megadl/main/unraid/megadl.xml</TemplateURL>
-  <Icon>https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/megadl/main/unraid/icon.png</Icon>
+  <TemplateURL>https://raw.githubusercontent.com/Augmentumz/megadl/main/unraid/megadl.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/Augmentumz/megadl/main/unraid/icon.png</Icon>
   <ExtraParams/>
   <PostArgs/>
   <CPUset/>
