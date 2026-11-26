@@ -1,11 +1,11 @@
 """Flask app: JSON API used by the GUI, plus the static GUI itself."""
 
-import hmac
 import os
+import time
 
-from flask import Flask, Response, jsonify, request, send_from_directory
+from flask import Flask, jsonify, redirect, request, send_from_directory
 
-from . import __version__, config, paths
+from . import __version__, auth, config, paths
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
@@ -14,20 +14,58 @@ def create_app(manager):
     app = Flask(__name__, static_folder=None)
 
     # ------------------------------------------------------------ security
+    OPEN_PATHS = {"/healthz", "/login", "/api/session"}
+
     @app.get("/healthz")
     def healthz():
         return jsonify({"ok": True, "megacmd": manager.server_state})
 
     @app.before_request
-    def require_password():
-        if not config.WEBUI_PASSWORD or request.path == "/healthz":
+    def protect():
+        path = request.path
+        # Changes must come from MegaDL's own page: browsers won't let other
+        # websites add this header to a cross-site request.
+        if path.startswith("/api/") and request.method in ("POST", "PUT", "DELETE") \
+                and request.headers.get("X-MegaDL") != "1":
+            return jsonify({"error": "Requests must come from the MegaDL page."}), 403
+        if not auth.enabled() or path in OPEN_PATHS or path.startswith("/static/"):
             return None
-        auth = request.authorization
-        if auth and hmac.compare_digest(auth.username or "", config.WEBUI_USER) and \
-                hmac.compare_digest(auth.password or "", config.WEBUI_PASSWORD):
+        if auth.valid_token(request.cookies.get(auth.COOKIE)):
             return None
-        return Response("Sign in to MegaDL", 401,
-                        {"WWW-Authenticate": 'Basic realm="MegaDL"'})
+        if path.startswith("/api/"):
+            return jsonify({"error": "Sign in to MegaDL first.", "login": True}), 401
+        return redirect("/login")
+
+    @app.get("/login")
+    def login_page():
+        if not auth.enabled() or auth.valid_token(request.cookies.get(auth.COOKIE)):
+            return redirect("/")
+        return send_from_directory(STATIC_DIR, "login.html")
+
+    @app.post("/api/session")
+    def sign_in():
+        if not auth.enabled():
+            return jsonify({"ok": True})
+        ip = request.remote_addr or "?"
+        if auth.throttle.blocked(ip):
+            return jsonify({"error": "Too many wrong tries. Wait 5 minutes and try again."}), 429
+        data = body()
+        if not auth.check_credentials(data.get("user"), data.get("secret")):
+            auth.throttle.failed(ip)
+            time.sleep(0.6)
+            return jsonify({"error": "That user name and password don't match."}), 401
+        auth.throttle.succeeded(ip)
+        token, max_age = auth.make_token(bool(data.get("remember")))
+        resp = jsonify({"ok": True})
+        resp.set_cookie(auth.COOKIE, token, max_age=max_age, httponly=True,
+                        samesite="Lax", secure=request.is_secure, path="/")
+        return resp
+
+    @app.delete("/api/session")
+    def sign_out():
+        resp = jsonify({"ok": True})
+        resp.delete_cookie(auth.COOKIE, path="/")
+        return resp
 
     @app.after_request
     def headers(resp):
@@ -71,7 +109,7 @@ def create_app(manager):
         data = manager.snapshot()
         data["version"] = __version__
         data["root_label"] = config.HOST_PATH_LABEL
-        data["auth_enabled"] = bool(config.WEBUI_PASSWORD)
+        data["auth_enabled"] = auth.enabled()
         return jsonify(data)
 
     @app.post("/api/downloads")
@@ -143,7 +181,8 @@ def create_app(manager):
     @app.post("/api/account/login")
     def login():
         data = body()
-        email, password = (data.get("email") or "").strip(), data.get("password") or ""
+        email = (data.get("email") or "").strip()
+        password = data.get("secret") or data.get("password") or ""
         if not email or not password:
             return error("Enter your MEGA e-mail and password.")
         result = manager.login(email, password, (data.get("code") or "").strip() or None)

@@ -9,7 +9,7 @@ A self-hosted web GUI for downloading **mega.nz** links straight onto your Unrai
 - **Sign in to your MEGA account** (two-factor codes work) so downloads use your account's transfer quota instead of the small anonymous one. The session survives restarts.
 - **Survives restarts.** Unfinished downloads resume, or are queued again automatically.
 - **Unraid-friendly files.** Downloads are owned by `nobody:users` with 666/777 permissions, so they show up over SMB.
-- An optional password for the web GUI, a light/dark theme that follows your system, and a layout that works on phones.
+- An optional sign-in page for the web GUI, a light/dark theme that follows your system, and a layout that works on phones.
 
 Under the hood it runs **MEGAcmd**, MEGA's official command-line client, which handles MEGA's encryption, quotas and resuming. MegaDL adds the GUI and the download management on top.
 
@@ -73,7 +73,7 @@ Unraid can't check a locally built image for updates; it will say "not available
 | Web GUI port | `8080` | `8080` | Port for the web interface. |
 | Downloads root | `/data` | `/mnt/user/` | The part of the server MegaDL can browse and save into. `/mnt/user/` gives access to all shares; point it at one share to restrict it. |
 | Default download folder | `DEFAULT_DOWNLOAD_DIR` | `downloads` | Folder inside the downloads root used when you don't pick one. It's created if it's missing, which on Unraid creates a `downloads` share. You can change it in Settings. |
-| Web GUI password | `WEBUI_PASSWORD` | empty | When set, the browser asks for a user name (`WEBUI_USER`, default `admin`) and this password. |
+| Web GUI password | `WEBUI_PASSWORD` | empty | When set, MegaDL shows a sign-in page (user name `WEBUI_USER`, default `admin`). The password is sent once, then the browser keeps a sign-in cookie for up to 30 days. Changing the password signs everyone out. |
 | Appdata | `/config` | `/mnt/user/appdata/megadl` | The download list, settings, logs and MEGA session. |
 | Host path label | `HOST_PATH_LABEL` | `/mnt/user` | Display only. Set it to the same host path as Downloads root so the GUI shows real paths. |
 | PUID / PGID | | `99` / `100` | The user and group that own downloaded files (`nobody:users`). |
@@ -113,8 +113,7 @@ Less common options: `POLL_INTERVAL` (seconds between progress updates, default 
 
 **Where are the logs?**
 - Container log: on the Docker tab, click the MegaDL icon and choose **Logs**.
-- MEGAcmd output: `appdata/megadl/logs/megacmd-server.log`. The previous run is kept as `.log.1`.
-- MEGAcmd's own detailed log: `appdata/megadl/.megaCmd/megacmdserver.log`.
+- MEGAcmd's own log: `appdata/megadl/.megaCmd/megacmdserver.log` (plus `.log.out` and `.log.err`).
 
 **The banner says "MEGAcmd didn't start".** MEGAcmd needs a unix socket and file locks in `/config/.megaCmd`. If your appdata share goes through Unraid's FUSE layer, change the Appdata path to the pool directly (for example `/mnt/cache/appdata/megadl`) or make the appdata share exclusive.
 
@@ -123,6 +122,8 @@ Less common options: `POLL_INTERVAL` (seconds between progress updates, default 
 **I can't see the files over SMB.** Check that PUID/PGID are `99`/`100` and the file and folder permissions are `666`/`777`. Files downloaded before you changed these keep their old permissions; on Unraid, run **Tools > New Permissions** on the share to fix them.
 
 **Sign-in fails although the password is right.** MEGAcmd can't handle passwords that start with a quote, or that contain a `"` together with spaces. Change the password on mega.nz, or sign in with a password without those characters.
+
+**MegaDL keeps losing its connection over a VPN (for example UniFi WiFiman/Teleport).** Your router's security scanner (UniFi CyberSecure/IPS) may be blocking the connection. Older MegaDL versions sent the password with every request, which those scanners flag. Update MegaDL, then remove the block in the router's security settings or move MegaDL to another port.
 
 **I want to save to Unassigned Devices.** Set Downloads root to `/mnt/` with access mode **RW/Slave**, and set Host path label to `/mnt`.
 
@@ -137,7 +138,7 @@ Browser ──HTTP──▶ MegaDL (Python/Flask) ──runs──▶ mega-get, 
                      └──────────────────────────▶ mega-cmd-server (MEGAcmd) ──▶ MEGA
 ```
 
-- MegaDL starts and supervises `mega-cmd-server`, restarting it if it stops. MEGAcmd's session lives in `/config/.megaCmd`, so you stay signed in.
+- MEGAcmd's commands start `mega-cmd-server` automatically when it isn't running. MegaDL notices when that server restarts and picks up from there. MEGAcmd's session lives in `/config/.megaCmd`, so you stay signed in.
 - Each link is queued with `mega-get -q`. MEGAcmd reports one transfer per file, so MegaDL groups them back into one download per link: it remembers the highest transfer number before queuing a link, and the first new transfer inside the chosen folder reveals the file or folder name.
 - Progress comes from `mega-transfers` every 1.5 seconds. Pause, resume and remove map to `mega-transfers -p/-r/-c` on every file of the download. If a folder download is paused while MEGAcmd is still adding its files, newly added files are paused too.
 - After a restart, MegaDL gives MEGAcmd a minute to resume its own cached transfers (it does this when signed in), then re-queues anything still missing.

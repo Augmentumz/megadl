@@ -21,11 +21,11 @@
   <DonateText/>
   <DonateLink/>
   <Requires/>
-  <Config Name="Web GUI port" Target="8080" Default="8080" Mode="tcp" Description="Port for the MegaDL web interface." Type="Port" Display="always" Required="true" Mask="false">8080</Config>
+  <Config Name="Web GUI port" Target="8080" Default="8095" Mode="tcp" Description="Port for the MegaDL web interface." Type="Port" Display="always" Required="true" Mask="false">8095</Config>
   <Config Name="Downloads root" Target="/data" Default="/mnt/user/" Mode="rw" Description="The part of your server MegaDL can browse and save into. /mnt/user/ lets you pick any share from the GUI. Use a single share (for example /mnt/user/downloads/) to restrict it." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/</Config>
   <Config Name="Default download folder" Target="DEFAULT_DOWNLOAD_DIR" Default="downloads" Mode="" Description="Folder inside the downloads root used when you don't pick one. Created if missing. You can change it later in the GUI's Settings." Type="Variable" Display="always" Required="false" Mask="false">downloads</Config>
-  <Config Name="Web GUI password" Target="WEBUI_PASSWORD" Default="" Mode="" Description="Optional. When set, the browser asks for a user name and this password before showing MegaDL." Type="Variable" Display="always" Required="false" Mask="true"/>
-  <Config Name="Web GUI user name" Target="WEBUI_USER" Default="admin" Mode="" Description="User name for the web GUI password prompt." Type="Variable" Display="advanced" Required="false" Mask="false">admin</Config>
+  <Config Name="Web GUI password" Target="WEBUI_PASSWORD" Default="" Mode="" Description="Optional. When set, MegaDL shows a sign-in page. The password is sent once when you sign in, then the browser keeps a sign-in cookie." Type="Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="Web GUI user name" Target="WEBUI_USER" Default="admin" Mode="" Description="User name for the MegaDL sign-in page." Type="Variable" Display="advanced" Required="false" Mask="false">admin</Config>
   <Config Name="Appdata" Target="/config" Default="/mnt/user/appdata/megadl" Mode="rw" Description="Download list, settings, logs and the MEGA session. If MEGAcmd fails to start, try /mnt/cache/appdata/megadl." Type="Path" Display="advanced" Required="true" Mask="false">/mnt/user/appdata/megadl</Config>
   <Config Name="Host path label" Target="HOST_PATH_LABEL" Default="/mnt/user" Mode="" Description="Only for display: set to the same host path as Downloads root so the GUI shows real server paths." Type="Variable" Display="advanced" Required="false" Mask="false">/mnt/user</Config>
   <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="User ID that owns downloaded files (99 = nobody)." Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>

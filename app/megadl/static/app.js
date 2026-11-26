@@ -2,8 +2,9 @@
 
 const $ = (sel, el = document) => el.querySelector(sel);
 
+let redirecting = false;
 async function api(method, url, body) {
-  const opts = { method, headers: {} };
+  const opts = { method, headers: { "X-MegaDL": "1" } };
   if (body !== undefined) {
     opts.headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body);
@@ -11,6 +12,10 @@ async function api(method, url, body) {
   const res = await fetch(url, opts);
   let data = {};
   try { data = await res.json(); } catch (_) { /* empty body */ }
+  if (res.status === 401 && data.login) {
+    redirecting = true;
+    location.replace("/login");
+  }
   if (!res.ok) {
     const err = new Error(data.error || data.message || `Request failed (${res.status})`);
     err.data = data;
@@ -119,7 +124,8 @@ function render() {
   $("#about-root").textContent = `${state.root_label} (inside the container: /data)`;
   $("#about-auth").textContent = state.auth_enabled
     ? "On"
-    : "Off. Set WEBUI_PASSWORD in the container settings to require one.";
+    : "Off. Set Web GUI password in the container settings to require a sign-in.";
+  $("#signout").hidden = !state.auth_enabled;
   $("#about-version").textContent = state.version;
 }
 
@@ -522,7 +528,7 @@ $("#login-form").addEventListener("submit", async (e) => {
   try {
     const res = await api("POST", "/api/account/login", {
       email: $("#email").value,
-      password: $("#password").value,
+      secret: $("#password").value,
       code: $("#code").value,
     });
     $("#password").value = "";
@@ -595,10 +601,16 @@ $("#settings-form").addEventListener("submit", async (e) => {
   }
 });
 
+$("#signout").addEventListener("click", async () => {
+  try { await api("DELETE", "/api/session"); } catch (_) { /* signing out anyway */ }
+  location.replace("/login");
+});
+
 /* ---------------------------------------------------------------- polling */
 let pollTimer = null;
 async function refresh() {
   clearTimeout(pollTimer);
+  if (redirecting) return;
   try {
     state = await api("GET", "/api/state");
     connectionLost = false;

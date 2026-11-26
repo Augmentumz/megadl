@@ -291,3 +291,19 @@ legend { font-weight: 600; padding: 0 0 8px; }
 @media (prefers-reduced-motion: reduce) {
   .job-fill, .job::after { transition: none; }
 }
+
+/* ------------------------------------------------------------ sign in */
+.signin-page { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; }
+.signin { width: min(380px, 100%); }
+.signin-brand { justify-content: center; margin-bottom: 18px; font-size: 19px; }
+.signin-card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-m);
+  padding: 22px 22px 24px;
+}
+.signin-card h1 { font-size: 20px; margin: 0 0 4px; }
+.signin-card input:not([type="checkbox"]) { width: 100%; }
+.signin-card .remember { margin-top: 16px; color: var(--muted); }
+.signin-card .remember input { accent-color: var(--amber); }
+.signin-submit { width: 100%; justify-content: center; margin-top: 18px; padding: 10px 14px; }
+.signin-fine { text-align: center; }
+.about .signout { margin-left: 10px; padding: 3px 10px; font-size: 13px; }

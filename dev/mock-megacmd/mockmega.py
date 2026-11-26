@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 
@@ -317,8 +318,36 @@ COMMANDS = {
     "permissions": cmd_permissions,
 }
 
+def server_alive():
+    pid = load().get("server_pid")
+    if not pid:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def ensure_server():
+    """Like real MEGAcmd clients: start the server if it isn't running."""
+    if server_alive():
+        return
+    os.makedirs(STATE_DIR, exist_ok=True)
+    here = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(STATE_DIR, "server.out"), "ab") as out:
+        subprocess.Popen([os.path.join(here, "mega-cmd-server")], stdin=subprocess.DEVNULL,
+                         stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
+    for _ in range(30):
+        time.sleep(0.1)
+        if server_alive():
+            return
+
+
 if __name__ == "__main__":
     name = sys.argv[1]
+    if name != "cmd-server":
+        ensure_server()
     if name not in COMMANDS:
         err(f"mock: command not implemented: {name}", 2)
     COMMANDS[name](sys.argv[2:])
