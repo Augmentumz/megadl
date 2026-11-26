@@ -116,8 +116,19 @@ def create_app(manager):
     def add_downloads():
         data = body()
         ids, skipped = manager.add_links(
-            data.get("links", ""), data.get("dest"), data.get("password") or None)
+            data.get("links", ""), data.get("dest"), data.get("password") or None,
+            start_paused=bool(data.get("start_paused")))
         return jsonify({"ids": ids, "skipped": skipped}), 201
+
+    @app.get("/api/downloads/<int:job_id>/files")
+    def job_files(job_id):
+        return jsonify(manager.files(job_id))
+
+    @app.post("/api/downloads/<int:job_id>/select")
+    def select_files(job_id):
+        data = body()
+        manager.select_files(job_id, data.get("paths"), bool(data.get("selected")))
+        return jsonify({"ok": True})
 
     @app.post("/api/downloads/<int:job_id>/pause")
     def pause(job_id):

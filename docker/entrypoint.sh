@@ -17,12 +17,11 @@ if ! getent passwd "${PUID}" >/dev/null; then
     useradd -u "${PUID}" -g "${PGID}" -d "${CONFIG_DIR}" -M -s /usr/sbin/nologin megadl
 fi
 
-mkdir -p "${CONFIG_DIR}/logs" "${CONFIG_DIR}/.megaCmd"
-chown "${PUID}:${PGID}" "${CONFIG_DIR}" "${CONFIG_DIR}/logs"
+mkdir -p "${CONFIG_DIR}/.megaCmd"
+chown "${PUID}:${PGID}" "${CONFIG_DIR}"
 chown -R "${PUID}:${PGID}" "${CONFIG_DIR}/.megaCmd"
 chmod 700 "${CONFIG_DIR}/.megaCmd"   # MEGAcmd refuses folders others can read
 find "${CONFIG_DIR}" -maxdepth 1 -name 'megadl.db*' -exec chown "${PUID}:${PGID}" {} +
-find "${CONFIG_DIR}/logs" -maxdepth 1 -type f -exec chown "${PUID}:${PGID}" {} +
 
 # MEGA's SDK identifies the device by machine-id; keep it stable across
 # container re-creation (Unraid recreates containers on every update).

@@ -18,6 +18,7 @@
       <symbol id="i-file" viewBox="0 0 20 20"><path d="M5.5 2.8h6l3.5 3.5v10.4c0 .3-.2.5-.5.5h-9a.5.5 0 0 1-.5-.5V3.3c0-.3.2-.5.5-.5Z M11.5 2.8v3.5H15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
       <symbol id="i-folder" viewBox="0 0 20 20"><path d="M2.8 5.3c0-.6.4-1 1-1h3.6l1.6 1.8h7.2c.6 0 1 .4 1 1v7.6c0 .6-.4 1-1 1H3.8a1 1 0 0 1-1-1V5.3Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
       <symbol id="i-up" viewBox="0 0 20 20"><path d="M10 15.5V5m0 0-4.2 4.2M10 5l4.2 4.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-chevron" viewBox="0 0 20 20"><path d="M7.5 5l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
       <symbol id="i-plus" viewBox="0 0 20 20"><path d="M10 4.5v11M4.5 10h11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
     </defs>
   </svg>
@@ -56,6 +57,10 @@
             <span class="dest-free" id="add-free"></span>
           </div>
           <div class="add-actions">
+            <label class="check start-paused" title="Folders added paused let you untick files before anything downloads">
+              <input type="checkbox" id="start-paused">
+              <span>Start paused</span>
+            </label>
             <button type="button" class="linklike" id="toggle-password" aria-expanded="false" aria-controls="password-row">Link has a password?</button>
             <button type="submit" class="btn primary" id="add-submit"><svg class="ic"><use href="#i-plus"/></svg>Add downloads</button>
           </div>

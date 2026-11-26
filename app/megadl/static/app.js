@@ -247,7 +247,7 @@ function buildRow(job) {
   name.className = "job-name";
   const meta = document.createElement("div");
   meta.className = "job-meta";
-  meta.append(span("job-state"), span("size"), span("files"), span("speed"), span("eta"), span("where"));
+  meta.append(span("job-state"), span("size"), span("files"), span("held"), span("speed"), span("eta"), span("where"));
   main.append(name, meta);
   const pct = document.createElement("div");
   pct.className = "job-pct";
@@ -256,7 +256,12 @@ function buildRow(job) {
   actions.append(iconButton("toggle", "pause"), iconButton("retry", "retry"), iconButton("delete", "trash", "del"));
   const error = document.createElement("p");
   error.className = "job-error";
-  li.append(fill, icon("file", "job-kind"), main, pct, actions, error);
+  const lead = document.createElement("div");
+  lead.className = "job-lead";
+  const expand = iconButton("files", "chevron", "job-expand");
+  expand.setAttribute("aria-expanded", "false");
+  lead.append(icon("file", "job-kind"), expand);
+  li.append(fill, lead, main, pct, actions, error);
   return li;
 }
 
@@ -268,7 +273,14 @@ function setText(el, text, keepSpace = false) {
 function updateRow(li, job) {
   li.dataset.status = job.status;
   li.style.setProperty("--pct", `${Math.min(100, job.percent).toFixed(2)}%`);
-  setIcon(li.querySelector(".job-kind"), job.kind === "folder" ? "folder" : "file");
+  const isFolder = job.kind === "folder";
+  li.querySelector(".job-kind").style.display = isFolder ? "none" : "";
+  const expand = li.querySelector(".job-expand");
+  expand.hidden = !isFolder;
+  expand.setAttribute("aria-expanded", String(openPanels.has(job.id)));
+  expand.setAttribute("aria-label", `${openPanels.has(job.id) ? "Hide" : "Show"} files in ${job.name}`);
+  expand.title = openPanels.has(job.id) ? "Hide files" : "Show files";
+  li.querySelector(".job-name").classList.toggle("clickable", isFolder);
 
   const name = li.querySelector(".job-name");
   setText(name, job.name);
@@ -282,6 +294,8 @@ function updateRow(li, job) {
   q(".job-state").title = STATUS_HELP[job.status] || "";
   setText(q(".size"), job.total ? (job.status === "completed" ? fmtBytes(job.total) : `${fmtBytes(job.done)} of ${fmtBytes(job.total)}`) : "");
   setText(q(".files"), job.kind === "folder" && job.files_total > 1 ? `${job.files_done} of ${job.files_total} files` : "");
+  setText(q(".held"), job.files_skipped
+    ? `${job.files_skipped} ${job.status === "completed" ? "skipped" : "not selected"}` : "");
   setText(q(".speed"), job.status === "downloading" && job.speed > 0 ? fmtSpeed(job.speed) : "");
   setText(q(".eta"), job.status === "downloading" ? fmtEta(job.eta) : "");
   setText(q(".where"), `to ${job.dest}`);
@@ -309,21 +323,34 @@ function updateRow(li, job) {
 function renderJobs(jobs) {
   const list = $("#jobs");
   const seen = new Set();
-  jobs.forEach((job, index) => {
+  const order = [];
+  for (const job of jobs) {
     let li = rows.get(job.id);
     if (!li) { li = buildRow(job); rows.set(job.id, li); }
+    if (openPanels.has(job.id) && job.kind !== "folder") closePanel(job.id);
     updateRow(li, job);
     seen.add(job.id);
-    if (list.children[index] !== li) list.insertBefore(li, list.children[index] || null);
-  });
-  for (const [id, li] of rows) {
-    if (!seen.has(id)) { li.remove(); rows.delete(id); }
+    order.push(li);
+    if (openPanels.has(job.id)) order.push(openPanels.get(job.id).el);
   }
+  for (const id of [...rows.keys()]) {
+    if (!seen.has(id)) { rows.get(id).remove(); rows.delete(id); closePanel(id); }
+  }
+  order.forEach((node, i) => {
+    if (list.children[i] !== node) list.insertBefore(node, list.children[i] || null);
+  });
+  while (list.children.length > order.length) list.lastElementChild.remove();
   $("#empty").hidden = jobs.length > 0;
 }
 
 $("#jobs").addEventListener("click", async (e) => {
-  const btn = e.target.closest("button[data-act]");
+  const name = e.target.closest(".job-name.clickable");
+  if (name) {
+    const job = state.jobs.find((j) => j.id === Number(name.closest(".job").dataset.id));
+    if (job) togglePanel(job);
+    return;
+  }
+  const btn = e.target.closest(".job button[data-act]");
   if (!btn) return;
   const id = Number(btn.closest(".job").dataset.id);
   const job = state.jobs.find((j) => j.id === id);
@@ -335,6 +362,9 @@ $("#jobs").addEventListener("click", async (e) => {
       await api("POST", `/api/downloads/${id}/retry`);
     } else if (btn.dataset.act === "delete") {
       openRemove(job);
+      return;
+    } else if (btn.dataset.act === "files") {
+      togglePanel(job);
       return;
     }
     refresh();
@@ -353,6 +383,236 @@ for (const [id, url, done] of [
   });
 }
 
+/* ----------------------------------------------------- folder file lists
+   A folder download can be opened to show its files as a tree. Ticked
+   files download; unticked ones are held and dropped when the rest are done. */
+const openPanels = new Map();   // job id -> panel state
+const FILE_STATE = {
+  QUEUED: "Waiting", ACTIVE: "Downloading", RETRYING: "Retrying", COMPLETING: "Finishing",
+  COMPLETED: "Done", FAILED: "Failed",
+};
+
+function togglePanel(job) {
+  if (openPanels.has(job.id)) {
+    closePanel(job.id);
+  } else {
+    const el = document.createElement("li");
+    el.className = "files-panel";
+    el.innerHTML = `
+      <div class="files-head">
+        <p class="files-hint"></p>
+        <div class="files-bulk">
+          <button type="button" class="btn quiet" data-bulk="all">Select all</button>
+          <button type="button" class="btn quiet" data-bulk="none">Select none</button>
+        </div>
+      </div>
+      <p class="files-reading" hidden>MEGAcmd is still reading this folder…</p>
+      <ul class="tree" role="list"></ul>`;
+    const panel = { id: job.id, el, sig: null, data: null, nodes: new Map(), collapsed: new Set(), firstBuild: true };
+    el.addEventListener("click", (e) => onPanelClick(panel, e));
+    el.addEventListener("change", (e) => onPanelChange(panel, e));
+    openPanels.set(job.id, panel);
+    loadFiles(job.id);
+  }
+  renderJobs(state.jobs);
+}
+
+function closePanel(id) {
+  const panel = openPanels.get(id);
+  if (!panel) return;
+  panel.el.remove();
+  openPanels.delete(id);
+}
+
+async function loadFiles(id) {
+  try {
+    const data = await api("GET", `/api/downloads/${id}/files`);
+    renderPanel(id, data);
+  } catch (_) { /* the next poll tries again */ }
+}
+
+function fileLabel(f) {
+  if (!f.selected) return f.state === "CANCELLED" ? "Skipped" : "Not selected";
+  if (f.state === "PAUSED") return "Paused";
+  if (f.state === "CANCELLED") return "Cancelled";
+  return FILE_STATE[f.state] || f.state;
+}
+
+function buildTree(files) {
+  const root = { path: "", name: "", folders: new Map(), files: [] };
+  for (const f of files) {
+    const parts = f.path.split("/");
+    let node = root;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const path = parts.slice(0, i + 1).join("/") + "/";
+      if (!node.folders.has(parts[i])) node.folders.set(parts[i], { path, name: parts[i], folders: new Map(), files: [] });
+      node = node.folders.get(parts[i]);
+    }
+    node.files.push(f);
+  }
+  return root;
+}
+
+function renderPanel(id, data) {
+  const panel = openPanels.get(id);
+  if (!panel) return;
+  panel.data = data;
+  const el = panel.el;
+  el.querySelector(".files-hint").textContent = data.editable
+    ? "Untick files you don't want. They're held back, and dropped once the ticked files have finished."
+    : "This download has finished.";
+  el.querySelector(".files-bulk").hidden = !data.editable || !data.files.length;
+  el.querySelector(".files-reading").hidden = !(data.reading && !data.files.length);
+  const sig = data.files.map((f) => f.path).join("\n");
+  if (sig !== panel.sig) {
+    if (panel.firstBuild && data.files.length) {
+      panel.firstBuild = false;
+      // Big folders start collapsed so the list stays manageable.
+      if (data.files.length > 60) {
+        for (const f of data.files) {
+          const parts = f.path.split("/");
+          for (let i = 1; i < parts.length; i++) panel.collapsed.add(parts.slice(0, i).join("/") + "/");
+        }
+      }
+    }
+    panel.sig = sig;
+    panel.nodes.clear();
+    const ul = el.querySelector(".tree");
+    ul.innerHTML = "";
+    appendNodes(panel, ul, buildTree(data.files), 0);
+  }
+  updateTree(panel, data);
+}
+
+function appendNodes(panel, ul, node, depth) {
+  const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true });
+  for (const folder of [...node.folders.values()].sort(byName)) {
+    const li = document.createElement("li");
+    li.className = "tnode";
+    const row = document.createElement("div");
+    row.className = "trow folder";
+    row.style.setProperty("--depth", depth);
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "ttoggle";
+    toggle.dataset.folder = folder.path;
+    toggle.append(icon("chevron"));
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.dataset.folder = folder.path;
+    cb.setAttribute("aria-label", `Download everything in ${folder.name}`);
+    const name = span("tname");
+    name.append(icon("folder", "ic tico"), document.createTextNode(folder.name));
+    row.append(toggle, cb, name, span("tstate"), span("tsize"), span("tpct"));
+    const children = document.createElement("ul");
+    children.className = "tchildren";
+    children.setAttribute("role", "list");
+    li.append(row, children);
+    ul.append(li);
+    panel.nodes.set(folder.path, { row, cb, toggle, children, folder, kind: "folder" });
+    appendNodes(panel, children, folder, depth + 1);
+  }
+  for (const f of [...node.files].sort((a, b) => byName({ name: a.path }, { name: b.path }))) {
+    const li = document.createElement("li");
+    li.className = "tnode";
+    const row = document.createElement("div");
+    row.className = "trow file";
+    row.style.setProperty("--depth", depth);
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.dataset.file = f.path;
+    const short = f.path.split("/").pop();
+    cb.setAttribute("aria-label", `Download ${short}`);
+    const name = span("tname");
+    name.textContent = short;
+    name.title = f.path;
+    row.append(span("tspacer"), cb, name, span("tstate"), span("tsize"), span("tpct"));
+    li.append(row);
+    ul.append(li);
+    panel.nodes.set(f.path, { row, cb, kind: "file" });
+  }
+}
+
+function updateTree(panel, data) {
+  for (const f of data.files) {
+    const n = panel.nodes.get(f.path);
+    if (!n) continue;
+    n.cb.checked = f.selected;
+    n.cb.disabled = !data.editable || f.state === "COMPLETED";
+    n.row.dataset.state = f.selected ? f.state : "HELD";
+    n.row.style.setProperty("--frac", f.selected ? (Math.min(100, f.percent) / 100).toFixed(4) : "0");
+    setText(n.row.querySelector(".tstate"), fileLabel(f), true);
+    setText(n.row.querySelector(".tsize"), fmtBytes(f.size), true);
+    setText(n.row.querySelector(".tpct"), f.selected ? `${Math.floor(f.percent)}%` : "", true);
+  }
+  for (const n of panel.nodes.values()) {
+    if (n.kind !== "folder") continue;
+    const inside = data.files.filter((f) => f.path.startsWith(n.folder.path));
+    const chosen = inside.filter((f) => f.selected);
+    const size = inside.reduce((t, f) => t + f.size, 0);
+    const chosenSize = chosen.reduce((t, f) => t + f.size, 0);
+    const done = chosen.reduce((t, f) => t + f.done, 0);
+    n.cb.checked = chosen.length > 0 && chosen.length === inside.length;
+    n.cb.indeterminate = chosen.length > 0 && chosen.length < inside.length;
+    n.cb.disabled = !data.editable || inside.every((f) => f.state === "COMPLETED");
+    const collapsed = panel.collapsed.has(n.folder.path);
+    n.children.hidden = collapsed;
+    n.toggle.setAttribute("aria-expanded", String(!collapsed));
+    n.toggle.setAttribute("aria-label", `${collapsed ? "Open" : "Close"} folder ${n.folder.name}`);
+    n.row.dataset.state = chosen.length ? "" : "HELD";
+    setText(n.row.querySelector(".tstate"),
+      `${inside.length} file${inside.length === 1 ? "" : "s"}${chosen.length < inside.length ? `, ${chosen.length} selected` : ""}`, true);
+    setText(n.row.querySelector(".tsize"), fmtBytes(size), true);
+    setText(n.row.querySelector(".tpct"), chosenSize ? `${Math.floor((100 * done) / chosenSize)}%` : "", true);
+  }
+}
+
+function onPanelClick(panel, e) {
+  const toggle = e.target.closest(".ttoggle");
+  if (toggle) {
+    const path = toggle.dataset.folder;
+    if (panel.collapsed.has(path)) panel.collapsed.delete(path); else panel.collapsed.add(path);
+    if (panel.data) updateTree(panel, panel.data);
+    return;
+  }
+  const bulk = e.target.closest("[data-bulk]");
+  if (bulk && panel.data) {
+    const all = bulk.dataset.bulk === "all";
+    const paths = panel.data.files.filter((f) => all || f.state !== "COMPLETED").map((f) => f.path);
+    selectFiles(panel, paths, all);
+  }
+}
+
+function onPanelChange(panel, e) {
+  const cb = e.target;
+  if (cb.type !== "checkbox" || !panel.data) return;
+  let paths;
+  if (cb.dataset.file) {
+    paths = [cb.dataset.file];
+  } else {
+    paths = panel.data.files
+      .filter((f) => f.path.startsWith(cb.dataset.folder) && (cb.checked || f.state !== "COMPLETED"))
+      .map((f) => f.path);
+  }
+  selectFiles(panel, paths, cb.checked);
+}
+
+async function selectFiles(panel, paths, selected) {
+  if (!paths.length) return;
+  // Show the change right away; the server's answer follows.
+  const chosen = new Set(paths);
+  for (const f of panel.data.files) {
+    if (chosen.has(f.path) && f.state !== "COMPLETED") f.selected = selected;
+  }
+  updateTree(panel, panel.data);
+  try {
+    await api("POST", `/api/downloads/${panel.id}/select`, { paths, selected });
+  } catch (err) {
+    toast(err.message, "error");
+  }
+  loadFiles(panel.id);
+}
+
 /* --------------------------------------------------------------- add form */
 const addForm = $("#add-form");
 addForm.addEventListener("submit", async (e) => {
@@ -366,12 +626,16 @@ addForm.addEventListener("submit", async (e) => {
       links,
       dest: addDest ? addDest.path : null,
       password: $("#link-password").value || null,
+      start_paused: $("#start-paused").checked,
     });
+    const startedPaused = $("#start-paused").checked;
+    $("#start-paused").checked = false;
     $("#links").value = "";
     $("#link-password").value = "";
     const n = res.ids.length;
     let msg = n ? `Added ${n} download${n === 1 ? "" : "s"}` : "Nothing new to add";
     if (res.skipped) msg += `. ${res.skipped} already in the list for that folder.`;
+    if (n && startedPaused) msg += ". Open a folder with the arrow to choose its files, then press play.";
     toast(msg);
     refresh();
   } catch (err) {
@@ -618,6 +882,7 @@ async function refresh() {
     connectionLost = true;
   }
   render();
+  if (state && !connectionLost) await Promise.all([...openPanels.keys()].map(loadFiles));
   pollTimer = setTimeout(refresh, document.hidden ? 5000 : 1500);
 }
 document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });

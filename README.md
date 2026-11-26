@@ -4,6 +4,7 @@ A self-hosted web GUI for downloading **mega.nz** links straight onto your Unrai
 
 - Paste one link or a whole pile of text. MegaDL picks out every `mega.nz` file and folder link, in both the new (`/file/…#key`, `/folder/…#key`) and old (`#!…`, `#F!…`) formats.
 - **Choose where downloads go.** A folder browser over your shares lets you pick or create the destination for each batch, and you can set a default folder.
+- **Choose files inside folders.** Expand a folder download to see its files and subfolders, and untick anything you don't want. Add a folder with **Start paused** to choose before anything downloads.
 - **Play, pause and remove** each download. Folder links are handled as one item, so pausing a folder pauses every file in it. There's also Retry for failed downloads, plus Pause all, Resume all and Clear finished.
 - **Speed limit.** Change it from the menu in the top bar or set an exact value in Settings. You can also set the number of connections per download.
 - **Sign in to your MEGA account** (two-factor codes work) so downloads use your account's transfer quota instead of the small anonymous one. The session survives restarts.
@@ -100,6 +101,10 @@ Less common options: `POLL_INTERVAL` (seconds between progress updates, default 
 | Paused | Paused by you. Press play to continue. |
 | Done | Finished. |
 | Failed | Something went wrong. The reason is shown; press Retry to try again. |
+
+**Choose which files of a folder to download.** Click the arrow next to a folder download (or its name) to open its file list. Untick files or whole subfolders you don't want. Unticked files are held back, not deleted, so you can tick them again while the download is still running. When everything ticked has finished, the download is marked done and the unticked files are dropped. Files that have already finished can't be unticked.
+
+To choose before anything downloads, tick **Start paused** when adding the link, open the folder once MEGAcmd has listed its files, untick what you don't want, then press play.
 
 **Remove a download** with the trash button. You can also tick **Also delete the downloaded files from the server**. MegaDL only offers this for files or folders it created itself, never for something that was already in the folder before the download started.
 

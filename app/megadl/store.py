@@ -32,10 +32,17 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 """
 
+# Columns added after the first release, created on existing databases.
+MIGRATIONS = {
+    "skipped": "TEXT NOT NULL DEFAULT '[]'",        # JSON list of unticked paths
+    "files_skipped": "INTEGER NOT NULL DEFAULT 0",
+}
+
 JOB_FIELDS = (
     "link", "link_password", "dest_dir", "root_path", "name", "kind", "status",
     "desired", "total_bytes", "done_bytes", "files_total", "files_done",
     "error", "preexisting", "submitted_at", "completed_at",
+    "skipped", "files_skipped",
 )
 
 
@@ -46,6 +53,10 @@ class Store:
         self._db.row_factory = sqlite3.Row
         with self._lock:
             self._db.executescript(SCHEMA)
+            have = {r["name"] for r in self._db.execute("PRAGMA table_info(jobs)")}
+            for column, decl in MIGRATIONS.items():
+                if column not in have:
+                    self._db.execute(f"ALTER TABLE jobs ADD COLUMN {column} {decl}")
             self._db.commit()
 
     # ------------------------------------------------------------------- jobs

@@ -25,7 +25,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-        ca-certificates curl gnupg tini procps \
+        ca-certificates curl gnupg tini \
         python3 python3-flask python3-waitress; \
     install -d -m 0755 /etc/apt/keyrings; \
     curl -fsSL "https://mega.nz/linux/repo/${MEGA_DISTRO}/Release.key" \

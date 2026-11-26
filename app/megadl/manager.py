@@ -14,6 +14,7 @@ under that root belongs to the job, which lets us pause, resume and cancel a
 whole folder download as one item.
 """
 
+import json
 import logging
 import os
 import queue
@@ -64,6 +65,22 @@ def extract_links(text):
 
 def is_folder_link(link):
     return "/folder/" in link or "#F!" in link
+
+
+def rel_path(job, path):
+    """Path of a file inside a folder download, e.g. "Season 1/ep1.mkv"."""
+    root = job.get("root_path")
+    if not root or not path.startswith(root + os.sep):
+        return None
+    return os.path.relpath(path, root).replace(os.sep, "/")
+
+
+def unticked(job):
+    """Files of a folder download the user doesn't want (held, then dropped)."""
+    try:
+        return set(json.loads(job.get("skipped") or "[]"))
+    except ValueError:
+        return set()
 
 
 class JobRuntime:
@@ -131,7 +148,7 @@ class Manager:
             t.join(timeout=5)
         self.mega.stop_server()
 
-    def add_links(self, text, dest_rel, password=None):
+    def add_links(self, text, dest_rel, password=None, start_paused=False):
         links = extract_links(text)
         if not links:
             raise ValueError("Paste at least one mega.nz link.")
@@ -152,12 +169,75 @@ class Manager:
                 if (link, dest) in busy:
                     skipped += 1  # already downloading to the same folder
                     continue
-                job_id = self.store.add_job(link, dest, password or None)
+                job_id = self.store.add_job(link, dest, password or None,
+                                            desired="pause" if start_paused else "run")
                 self.jobs[job_id] = self.store.get_job(job_id)
                 ids.append(job_id)
         for job_id in ids:
             self.submit_q.put(job_id)
         return ids, skipped
+
+    def files(self, job_id):
+        """Files of a folder download, for the expandable file list."""
+        with self.lock:
+            job = self._job(job_id)
+            rt = self.rt.get(job_id)
+            skipped = unticked(job)
+            latest = {}
+            for tag, t in (rt.tags.items() if rt else ()):
+                rel = rel_path(job, t.path)
+                if rel is not None and (rel not in latest or tag > latest[rel][0]):
+                    latest[rel] = (tag, t)
+            files = [{
+                "path": rel,
+                "size": t.total,
+                "done": t.done,
+                "percent": t.percent,
+                "state": t.state,
+                "selected": rel not in skipped or t.state == "COMPLETED",
+            } for rel, (_tag, t) in latest.items()]
+            status = job["status"]
+        files.sort(key=lambda f: f["path"].casefold())
+        return {
+            "files": files,
+            "editable": status in UNFINISHED,
+            "reading": status in (QUEUED, STARTING) or (status in IN_MEGA and not files),
+        }
+
+    def select_files(self, job_id, rels, selected):
+        """Tick (download) or untick (hold, then drop) files of a folder download."""
+        if not isinstance(rels, list) or len(rels) > 100000:
+            raise ValueError("Send a list of file paths.")
+        rels = {r for r in rels if isinstance(r, str) and r and not r.startswith("/")
+                and ".." not in r.split("/")}
+        with self.lock:
+            job = self._job(job_id)
+            if job.get("kind") != "folder":
+                raise ValueError("Only folder downloads have files to choose from.")
+            if job["status"] not in UNFINISHED:
+                raise ValueError("This download has finished, so its files can't be changed.")
+            rt = self.rt.get(job_id)
+            if not selected and rt:
+                # A file that already finished downloading can't be unticked.
+                done = {rel_path(job, t.path) for t in rt.tags.values() if t.state == "COMPLETED"}
+                rels -= done
+            skipped = unticked(job)
+            skipped = (skipped - rels) if selected else (skipped | rels)
+            self._save(job_id, skipped=json.dumps(sorted(skipped)))
+            pause, resume = [], []
+            for tag, t in (rt.tags.items() if rt else ()):
+                if rel_path(job, t.path) not in rels:
+                    continue
+                if not selected and t.state in ("QUEUED", "ACTIVE", "RETRYING"):
+                    pause.append(tag)
+                elif selected and t.state == "PAUSED" and job["desired"] == "run":
+                    resume.append(tag)
+            if rt:
+                rt.finished_since = None
+        if pause:
+            self.mega.pause(pause)
+        if resume:
+            self.mega.resume(resume)
 
     def pause(self, job_id):
         with self.lock:
@@ -178,12 +258,12 @@ class Manager:
             if job["status"] == COMPLETED:
                 return
             self._save(job_id, desired="run")
-            tags = self._tags_in(job_id, {"PAUSED"})
-            requeue = job["status"] == QUEUED
+            skipped = unticked(job)
+            # Unticked files stay paused.
+            tags = [tag for tag in self._tags_in(job_id, {"PAUSED"})
+                    if rel_path(job, self.rt[job_id].tags[tag].path) not in skipped]
         if tags:
             self.mega.resume(tags)
-        if requeue:
-            self.submit_q.put(job_id)
 
     def retry(self, job_id):
         with self.lock:
@@ -386,6 +466,7 @@ class Manager:
             "eta": eta,
             "files_total": job["files_total"],
             "files_done": job["files_done"],
+            "files_skipped": job.get("files_skipped") or 0,
             "error": job["error"],
             "can_delete_files": bool(root and not job["preexisting"] and os.path.lexists(root)),
             "created_at": job["created_at"],
@@ -617,16 +698,21 @@ class Manager:
                         tag for tag, t in rt.tags.items() if t.state in ACTIVE_STATES)
                     continue
                 self._enforce(job, rt, actions, now)
-                self._aggregate(job, rt, now)
+                self._aggregate(job, rt, now, actions)
         return actions
 
     def _enforce(self, job, rt, actions, now):
         if job["status"] not in IN_MEGA:
             return
+        skipped = unticked(job)
+        folder = job.get("kind") == "folder"
         for tag, t in rt.tags.items():
-            if job["desired"] == "pause" and t.state in ("QUEUED", "ACTIVE", "RETRYING"):
+            if folder and t.path == job.get("root_path"):
+                continue  # the folder's own record, not a file
+            held = rel_path(job, t.path) in skipped
+            if t.state in ("QUEUED", "ACTIVE", "RETRYING") and (job["desired"] == "pause" or held):
                 op = "pause"
-            elif job["desired"] == "run" and t.state == "PAUSED":
+            elif t.state == "PAUSED" and job["desired"] == "run" and not held:
                 op = "resume"
             else:
                 continue
@@ -636,7 +722,7 @@ class Manager:
             rt.actions[tag] = (op, now)
             actions[op].add(tag)
 
-    def _aggregate(self, job, rt, now):
+    def _aggregate(self, job, rt, now, actions):
         if not rt.tags or job["status"] not in IN_MEGA:
             return
         root = job.get("root_path")
@@ -648,15 +734,25 @@ class Manager:
             root_rows, file_rows = [], rows
         if not file_rows:
             return
+        skipped = unticked(job)
+        def is_held(r):
+            return r.state != "COMPLETED" and rel_path(job, r.path) in skipped
+        held = [r for r in file_rows if is_held(r)]
+        file_rows = [r for r in file_rows if not is_held(r)]
         total = sum(r.total for r in file_rows)
         done = sum(r.done for r in file_rows)
         files_done = sum(1 for r in file_rows if r.state == "COMPLETED")
         unfinished = [r for r in file_rows if r.state in ACTIVE_STATES]
         failed = [r for r in file_rows if r.state in ("FAILED", "CANCELLED")]
         fields = {"total_bytes": total, "done_bytes": done,
-                  "files_total": len(file_rows), "files_done": files_done}
+                  "files_total": len(file_rows), "files_done": files_done,
+                  "files_skipped": len(held)}
 
-        if unfinished:
+        if not file_rows:
+            # Every file is unticked: wait for the user rather than finishing.
+            rt.finished_since = None
+            status = PAUSED
+        elif unfinished:
             rt.finished_since = None
             states = {r.state for r in unfinished}
             if job["desired"] == "pause":
@@ -689,6 +785,11 @@ class Manager:
                 fields["done_bytes"] = total
                 fields["completed_at"] = time.time()
                 fields["error"] = None
+            if status in (COMPLETED, FAILED):
+                # Unticked files were only held; drop them now.
+                actions["cancel"].update(
+                    tag for tag, t in rt.tags.items()
+                    if t.state in ACTIVE_STATES and rel_path(job, t.path) in skipped)
 
         # speed (smoothed)
         if status == DOWNLOADING and rt.last_done is not None and now > rt.last_t:
@@ -705,6 +806,42 @@ class Manager:
             self._save(job["id"], **fields)
         else:
             job.update(fields)  # keep memory fresh, write to disk later
+
+    def _pause_new_files(self, job_id, dest, seconds=8):
+        """For a job added paused, pause its files as soon as MEGAcmd lists them.
+
+        The poller would also do it, but only every POLL_INTERVAL seconds,
+        which lets the first files download for a moment. Submissions are one
+        at a time, so new transfers in this folder belong to this job.
+        """
+        with self.lock:
+            job = self.jobs.get(job_id)
+            rt = self.rt.get(job_id)
+            if not job or not rt or job["desired"] != "pause":
+                return
+            floor = rt.tag_floor
+        prefix = dest.rstrip(os.sep) + os.sep
+        paused = set()
+        last_new = time.monotonic()
+        deadline = last_new + seconds
+        while time.monotonic() < deadline and not self.stop_event.is_set():
+            try:
+                rows = self.mega.transfers()
+            except MegaCmdError:
+                rows = []
+            new = [t.tag for t in rows if t.tag > floor and t.tag not in paused
+                   and t.path.startswith(prefix) and t.state in ("QUEUED", "ACTIVE", "RETRYING")]
+            if new:
+                self.mega.pause(new)
+                paused.update(new)
+                last_new = time.monotonic()
+            elif paused and time.monotonic() - last_new > 1.5:
+                return  # MEGAcmd has finished listing the files
+            with self.lock:
+                job = self.jobs.get(job_id)
+                if not job or job["desired"] != "pause":
+                    return
+            self.stop_event.wait(0.25)
 
     def _maybe_recover(self):
         """After a restart, re-queue downloads MEGAcmd didn't resume itself."""
@@ -742,7 +879,7 @@ class Manager:
     def _submit(self, job_id):
         with self.lock:
             job = self.jobs.get(job_id)
-            if not job or job["status"] != QUEUED or job["desired"] == "pause":
+            if not job or job["status"] != QUEUED:
                 return
             link, dest, password = job["link"], job["dest_dir"], job["link_password"]
         try:
@@ -775,6 +912,7 @@ class Manager:
                 self._save(job_id, status=FAILED,
                            error=message or "MEGA refused the link. Check that it is complete.")
             return
+        self._pause_new_files(job_id, dest)
 
         timeout = 900 if is_folder_link(link) else 120
         deadline = time.monotonic() + timeout

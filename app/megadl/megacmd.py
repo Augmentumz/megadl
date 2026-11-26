@@ -22,7 +22,7 @@ log = logging.getLogger("megadl.megacmd")
 # Column separator for `mega-transfers --col-separator`. Paths are printed
 # untruncated when a separator is used.
 SEP = "|~|"
-COLUMNS = "TYPE,TAG,SOURCEPATH,DESTINYPATH,PROGRESS,STATE"
+COLUMNS = "TAG,DESTINYPATH,PROGRESS,STATE"
 
 # PROGRESS looks like "45.32% of   1.20 GB" (or "----% of 0.00  B").
 _PROGRESS_RE = re.compile(
@@ -41,7 +41,6 @@ FINISHED_STATES = {"COMPLETED", "CANCELLED", "FAILED"}
 class Transfer:
     tag: int
     path: str          # local destination path of the file
-    source: str
     percent: float     # 0..100
     total: int         # bytes (approximate: MEGAcmd prints 2 decimals)
     done: int          # bytes (estimated from percent)
@@ -106,7 +105,6 @@ def parse_transfers(text):
         rows.append(Transfer(
             tag=tag,
             path=os.path.normpath(path),
-            source=row.get("SOURCEPATH", "").strip(),
             percent=100.0 if state == "COMPLETED" else percent,
             total=total,
             done=done,
@@ -274,15 +272,6 @@ class MegaCmd:
         value = max(0, int(bytes_per_second))
         rc, out, err = self.run("speedlimit", "-d", f"{value}B", timeout=30)
         return rc == 0, clean_message(out, err)
-
-    def get_download_limit(self):
-        rc, out, _err = self.run("speedlimit", "-d", timeout=30)
-        if rc != 0:
-            return None
-        if "unlimited" in out:
-            return 0
-        m = re.search(r"=\s*([0-9]+)", out)
-        return int(m.group(1)) if m else None
 
     def set_download_connections(self, connections):
         rc, out, err = self.run("speedlimit", "--download-connections",

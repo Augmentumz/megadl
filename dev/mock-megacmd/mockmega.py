@@ -226,15 +226,19 @@ def cmd_get(args):
             return t
         if folder:
             root = os.path.join(dest, name)
-            os.makedirs(os.path.join(root, "day 2"), exist_ok=True)
+            layout = [
+                ("cover.jpg", 2), ("Day 1/IMG_0001.jpg", 6), ("Day 1/IMG_0002.jpg", 7),
+                ("Day 1/IMG_0003.jpg", 5), ("Day 2/VID_0004.mp4", 28 + seed % 9),
+                ("Day 2/VID_0005.mp4", 22 + seed % 7), ("Day 2/Extras/notes.txt", 0.01),
+            ]
+            for rel, _mb in layout:
+                os.makedirs(os.path.dirname(os.path.join(root, rel)), exist_ok=True)
             ftag = s["next_tag"]
             s["next_tag"] += 1
-            sizes = [8 + seed % 7, 12 + seed % 5, 20 + seed % 9]
             s.setdefault("folders", []).append(
-                {"tag": ftag, "path": root, "total": sum(sizes) * 1048576})
-            add(os.path.join(root, "IMG_0001.jpg"), sizes[0] * 1048576, ftag)
-            add(os.path.join(root, "IMG_0002.jpg"), sizes[1] * 1048576, ftag)
-            add(os.path.join(root, "day 2", "VID_0003.mp4"), sizes[2] * 1048576, ftag)
+                {"tag": ftag, "path": root, "total": int(sum(mb for _r, mb in layout) * 1048576)})
+            for rel, mb in layout:
+                add(os.path.join(root, rel), int(mb * 1048576), ftag)
         else:
             total = 1024 if "tiny" in link else (30 + seed % 90) * 1048576
             add(os.path.join(dest, name), total)
