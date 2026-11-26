@@ -238,9 +238,16 @@ class Manager:
             clean["download_connections"] = n
         if "default_dest" in values:
             dest = paths.resolve(values["default_dest"] or "")
-            if not os.path.isdir(dest):
-                raise ValueError("That folder doesn't exist.")
-            clean["default_dest"] = paths.relative(dest)
+            rel = paths.relative(dest)
+            if rel != self.settings.get("default_dest"):
+                # Only a new choice needs checking; the default folder is
+                # created on demand, so it may not exist yet.
+                if not os.path.isdir(dest):
+                    try:
+                        os.makedirs(dest, exist_ok=True)
+                    except OSError as exc:
+                        raise ValueError(f"Couldn't create that folder: {exc.strerror}")
+                clean["default_dest"] = rel
         self.store.set_settings(**clean)
         with self.lock:
             self.settings.update(clean)
