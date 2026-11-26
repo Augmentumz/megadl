@@ -27,8 +27,7 @@ def main():
         os.makedirs(config.DOWNLOAD_ROOT, exist_ok=True)
 
     store = Store(os.path.join(config.CONFIG_DIR, "megadl.db"))
-    mega = MegaCmd(home=config.CONFIG_DIR, bin_dir=config.MEGACMD_BIN_DIR,
-                   log_dir=os.path.join(config.CONFIG_DIR, "logs"))
+    mega = MegaCmd(home=config.CONFIG_DIR, bin_dir=config.MEGACMD_BIN_DIR)
     manager = Manager(mega, store)
     manager.start()
     app = create_app(manager)

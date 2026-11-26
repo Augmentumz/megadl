@@ -104,7 +104,7 @@ class Manager:
         self.busy_account = False
         self.max_tag = 0
         self.poll_error = None
-        self._external_server = False
+        self._server_pid = None
         self._needs_setup = True
         self._recovery_done = False
         self._ticks = 0
@@ -387,24 +387,31 @@ class Manager:
 
     # --------------------------------------------------------------- server
     def _ensure_server(self):
-        if self.mega.server_running() or self._external_server:
-            return True
+        """Make sure MEGAcmd answers; notice when its server (re)started.
+
+        We don't launch mega-cmd-server ourselves: any mega-* command starts
+        it when it isn't running, which is how MEGAcmd is meant to be used.
+        """
+        pid = self.mega.server_pid()
         if self.server_state == "up":
-            log.warning("mega-cmd-server stopped; restarting it")
+            if pid is not None and pid == self._server_pid:
+                return True
+            if pid is None and self._server_pid is None and self.mega.ping(timeout=15):
+                return True  # can't see the process here, but it answers
+            log.warning("MEGAcmd server stopped; starting it again")
         self.server_state = "starting"
         self.server_message = "Starting MEGAcmd..."
-        self.mega.start_server()
         if not self.mega.wait_until_ready(timeout=120):
             self.server_state = "down"
             self.server_message = ("MEGAcmd didn't start. Check "
-                                   "/config/logs/megacmd-server.log")
-            self.mega.stop_server()
+                                   "/config/.megaCmd/megacmdserver.log")
             return False
-        if not self.mega.server_running():
-            # Ours exited because another instance holds the lock (mega-*
-            # clients start one automatically when none is reachable).
-            log.info("Using the MEGAcmd server that is already running")
-            self._external_server = True
+        for _ in range(6):  # the process can take a moment to show up
+            self._server_pid = self.mega.server_pid()
+            if self._server_pid:
+                break
+            time.sleep(0.5)
+        log.info("MEGAcmd server is running (pid %s)", self._server_pid)
         self._on_server_started()
         return True
 
@@ -464,8 +471,6 @@ class Manager:
             self._refresh_account()
         elif self._ticks % 20 == 0 and not self.busy_account:
             self._refresh_account()
-        if self._ticks % 200 == 0:
-            self.mega.trim_server_log()
 
         try:
             active = self.mega.transfers()

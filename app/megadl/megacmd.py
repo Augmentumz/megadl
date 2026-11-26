@@ -12,6 +12,7 @@ Output formats parsed here were taken from the MEGAcmd source
 import logging
 import os
 import re
+import signal
 import subprocess
 import time
 from dataclasses import dataclass
@@ -115,12 +116,9 @@ def parse_transfers(text):
 
 
 class MegaCmd:
-    def __init__(self, home, bin_dir="", log_dir=None):
+    def __init__(self, home, bin_dir=""):
         self.home = home
         self.bin_dir = bin_dir
-        self.log_dir = log_dir or os.path.join(home, "logs")
-        self.server_proc = None
-        self._server_log = None
 
     # ------------------------------------------------------------------ basics
     def _exe(self, name):
@@ -159,68 +157,57 @@ class MegaCmd:
         return proc.returncode, out, err
 
     # ------------------------------------------------------------------ server
-    def server_running(self):
-        return self.server_proc is not None and self.server_proc.poll() is None
+    # MEGAcmd's own clients start mega-cmd-server in the background whenever
+    # they can't reach it (see createSocket in megacmdshellcommunications.cpp),
+    # so we never launch it ourselves: two launchers would fight over it.
+    # We only find its process to notice restarts and to stop it on shutdown.
+    def server_pid(self):
+        """PID of the running mega-cmd-server owned by us, or None."""
+        uid = os.getuid()
+        for name in os.listdir("/proc"):
+            if not name.isdigit():
+                continue
+            try:
+                if os.stat(f"/proc/{name}").st_uid != uid:
+                    continue
+                with open(f"/proc/{name}/cmdline", "rb") as f:
+                    argv0 = f.read().split(b"\0", 1)[0]
+            except OSError:
+                continue
+            if os.path.basename(argv0) == b"mega-cmd-server":
+                return int(name)
+        return None
 
-    def ping(self, timeout=15):
+    def ping(self, timeout=30):
+        """Talk to the server, which starts it if it isn't running."""
         rc, _out, _err = self.run("version", timeout=timeout)
         return rc == 0
 
-    def start_server(self):
-        """Start mega-cmd-server in the background, logging to a file."""
-        os.makedirs(self.log_dir, exist_ok=True)
-        log_path = os.path.join(self.log_dir, "megacmd-server.log")
-        # Keep the previous run's log for troubleshooting.
-        if os.path.exists(log_path):
-            try:
-                os.replace(log_path, log_path + ".1")
-            except OSError:
-                pass
-        if self._server_log:
-            self._server_log.close()
-        self._server_log = open(log_path, "ab", buffering=0)
-        log.info("Starting mega-cmd-server")
-        self.server_proc = subprocess.Popen(
-            [self._exe("mega-cmd-server")],
-            stdin=subprocess.DEVNULL,
-            stdout=self._server_log,
-            stderr=subprocess.STDOUT,
-            env=self._env(),
-            cwd=self.home,
-            start_new_session=True,
-        )
-
-    def trim_server_log(self, max_bytes=20 * 1024 * 1024):
-        path = os.path.join(self.log_dir, "megacmd-server.log")
-        try:
-            if os.path.getsize(path) > max_bytes:
-                os.truncate(path, 0)
-        except OSError:
-            pass
-
-    def stop_server(self, timeout=10):
-        if not self.server_running():
-            return
-        log.info("Stopping mega-cmd-server")
-        self.server_proc.terminate()
-        try:
-            self.server_proc.wait(timeout)
-        except subprocess.TimeoutExpired:
-            self.server_proc.kill()
-        self.server_proc = None
-
-    def wait_until_ready(self, timeout=90):
+    def wait_until_ready(self, timeout=120):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            if self.server_proc is not None and self.server_proc.poll() is not None:
-                # Exited: fine only if another instance is answering.
-                log.info("mega-cmd-server exited with %s", self.server_proc.returncode)
-                self.server_proc = None
-                return self.ping(timeout=10)
-            if self.ping(timeout=10):
+            if self.ping():
                 return True
-            time.sleep(1)
+            time.sleep(2)
         return False
+
+    def stop_server(self, timeout=10):
+        pid = self.server_pid()
+        if not pid:
+            return
+        log.info("Stopping mega-cmd-server")
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            return
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline and self.server_pid() == pid:
+            time.sleep(0.25)
+        if self.server_pid() == pid:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
 
     # ----------------------------------------------------------------- account
     def whoami(self):
