@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>MegaDL</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-play" viewBox="0 0 20 20"><path d="M6 4.2v11.6c0 .6.7 1 1.2.6l8.6-5.8a.75.75 0 0 0 0-1.2L7.2 3.6C6.7 3.3 6 3.6 6 4.2Z" fill="currentColor"/></symbol>
+      <symbol id="i-pause" viewBox="0 0 20 20"><rect x="5" y="4" width="3.4" height="12" rx="1" fill="currentColor"/><rect x="11.6" y="4" width="3.4" height="12" rx="1" fill="currentColor"/></symbol>
+      <symbol id="i-trash" viewBox="0 0 20 20"><path d="M7.5 3.5h5M4 6h12M6 6l.7 9.3c.1.7.6 1.2 1.3 1.2h4c.7 0 1.2-.5 1.3-1.2L14 6M8.6 9v4.6M11.4 9v4.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-retry" viewBox="0 0 20 20"><path d="M15.5 10a5.5 5.5 0 1 1-1.6-3.9M14.6 3.4v3.2h-3.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-file" viewBox="0 0 20 20"><path d="M5.5 2.8h6l3.5 3.5v10.4c0 .3-.2.5-.5.5h-9a.5.5 0 0 1-.5-.5V3.3c0-.3.2-.5.5-.5Z M11.5 2.8v3.5H15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+      <symbol id="i-folder" viewBox="0 0 20 20"><path d="M2.8 5.3c0-.6.4-1 1-1h3.6l1.6 1.8h7.2c.6 0 1 .4 1 1v7.6c0 .6-.4 1-1 1H3.8a1 1 0 0 1-1-1V5.3Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+      <symbol id="i-up" viewBox="0 0 20 20"><path d="M10 15.5V5m0 0-4.2 4.2M10 5l4.2 4.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-plus" viewBox="0 0 20 20"><path d="M10 4.5v11M4.5 10h11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+    </defs>
+  </svg>
+
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="3" width="26" height="26" rx="7" fill="var(--amber)"/><path d="M16 8.5v11m0 0-4.6-4.6M16 19.5l4.6-4.6M10 23.5h12" fill="none" stroke="var(--on-amber)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>MegaDL</span>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button role="tab" id="tab-downloads" aria-controls="view-downloads" aria-selected="true" data-view="downloads">Downloads</button>
+      <button role="tab" id="tab-account" aria-controls="view-account" aria-selected="false" data-view="account">Account</button>
+      <button role="tab" id="tab-settings" aria-controls="view-settings" aria-selected="false" data-view="settings">Settings</button>
+    </nav>
+    <div class="rate">
+      <div class="rate-now" aria-live="off"><span id="total-speed">0 B/s</span><span class="rate-caption">total</span></div>
+      <label class="rate-limit">
+        <span>Limit</span>
+        <select id="quick-limit" aria-label="Download speed limit"></select>
+      </label>
+    </div>
+  </header>
+
+  <div id="banner" class="banner" hidden></div>
+
+  <main>
+    <!-- Downloads -->
+    <section id="view-downloads" role="tabpanel" aria-labelledby="tab-downloads" class="view">
+      <form id="add-form" class="add" autocomplete="off">
+        <label for="links" class="sr-only">mega.nz links</label>
+        <textarea id="links" rows="2" placeholder="Paste mega.nz links here, one or many" spellcheck="false"></textarea>
+        <div class="add-row">
+          <div class="dest">
+            <span class="dest-label">Save to</span>
+            <button type="button" class="dest-path" id="add-dest" title="Choose a folder"></button>
+            <span class="dest-free" id="add-free"></span>
+          </div>
+          <div class="add-actions">
+            <button type="button" class="linklike" id="toggle-password" aria-expanded="false" aria-controls="password-row">Link has a password?</button>
+            <button type="submit" class="btn primary" id="add-submit"><svg class="ic"><use href="#i-plus"/></svg>Add downloads</button>
+          </div>
+        </div>
+        <div class="password-row" id="password-row" hidden>
+          <label for="link-password">Link password</label>
+          <input id="link-password" type="password" autocomplete="off" placeholder="Used for password-protected links in this batch">
+        </div>
+      </form>
+
+      <div class="listbar">
+        <p id="summary" class="summary"></p>
+        <div class="listbar-actions">
+          <button class="btn quiet" id="pause-all">Pause all</button>
+          <button class="btn quiet" id="resume-all">Resume all</button>
+          <button class="btn quiet" id="clear-finished">Clear finished</button>
+        </div>
+      </div>
+
+      <ol id="jobs" class="jobs" aria-label="Downloads"></ol>
+      <div id="empty" class="empty" hidden>
+        <p class="empty-title">Nothing downloading yet</p>
+        <p>Paste a mega.nz file or folder link above and choose where it should go on your server.</p>
+      </div>
+    </section>
+
+    <!-- Account -->
+    <section id="view-account" role="tabpanel" aria-labelledby="tab-account" class="view narrow" hidden>
+      <h1>MEGA account</h1>
+      <div id="account-in" hidden>
+        <p class="lead">Signed in as <strong id="account-email"></strong></p>
+        <p class="note">Downloads count against this account's transfer quota. Signing out stops downloads that are in progress.</p>
+        <button class="btn" id="logout">Sign out</button>
+      </div>
+      <form id="login-form" hidden>
+        <p class="note">Public links download without an account, but MEGA limits how much an anonymous user can transfer. Signing in uses your account's quota, which is larger on paid plans.</p>
+        <label for="email">E-mail</label>
+        <input id="email" type="email" autocomplete="username" required>
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" required>
+        <label for="code">Two-factor code <span class="optional">if your account uses one</span></label>
+        <input id="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="8">
+        <p id="login-error" class="form-error" role="alert" hidden></p>
+        <button class="btn primary" type="submit" id="login-submit">Sign in</button>
+        <p class="fine">Your password is passed straight to MEGAcmd, MEGA's official client, and isn't saved by MegaDL. MEGAcmd keeps a session token in the app's config folder so you stay signed in after restarts.</p>
+      </form>
+    </section>
+
+    <!-- Settings -->
+    <section id="view-settings" role="tabpanel" aria-labelledby="tab-settings" class="view narrow" hidden>
+      <h1>Settings</h1>
+      <form id="settings-form">
+        <fieldset>
+          <legend>Download speed limit</legend>
+          <div class="inline">
+            <input id="limit-value" type="number" min="0" step="any" aria-label="Limit value">
+            <select id="limit-unit" aria-label="Limit unit">
+              <option value="1024">KB/s</option>
+              <option value="1048576" selected>MB/s</option>
+            </select>
+          </div>
+          <p class="hint">Leave empty or 0 for no limit. Applies to all downloads at once.</p>
+        </fieldset>
+        <fieldset>
+          <legend>Default download folder</legend>
+          <div class="inline">
+            <button type="button" class="dest-path" id="settings-dest"></button>
+          </div>
+          <p class="hint">New downloads go here unless you pick another folder when adding them.</p>
+        </fieldset>
+        <fieldset>
+          <legend>Connections per download</legend>
+          <div class="inline">
+            <input id="connections" type="number" min="1" max="16" step="1" placeholder="MEGA default" aria-label="Connections per download">
+          </div>
+          <p class="hint">More connections can speed up single large files. Leave empty to use MEGAcmd's default.</p>
+        </fieldset>
+        <p id="settings-error" class="form-error" role="alert" hidden></p>
+        <button class="btn primary" type="submit">Save settings</button>
+      </form>
+      <dl class="about">
+        <dt>Downloads root</dt><dd id="about-root"></dd>
+        <dt>Web GUI password</dt><dd id="about-auth"></dd>
+        <dt>Version</dt><dd id="about-version"></dd>
+      </dl>
+    </section>
+  </main>
+
+  <!-- Folder picker -->
+  <dialog id="picker" class="dialog" aria-labelledby="picker-title">
+    <form method="dialog" class="dialog-body">
+      <h2 id="picker-title">Choose a folder</h2>
+      <nav class="crumbs" id="picker-crumbs" aria-label="Current folder"></nav>
+      <ul class="folders" id="picker-list"></ul>
+      <div class="newfolder">
+        <input id="picker-new" placeholder="New folder name" aria-label="New folder name">
+        <button type="button" class="btn quiet" id="picker-create">Create folder</button>
+      </div>
+      <p id="picker-error" class="form-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button value="cancel" class="btn quiet">Cancel</button>
+        <button type="button" class="btn primary" id="picker-choose">Use this folder</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Remove download -->
+  <dialog id="remove" class="dialog" aria-labelledby="remove-title">
+    <form method="dialog" class="dialog-body">
+      <h2 id="remove-title">Remove download?</h2>
+      <p id="remove-name" class="remove-name"></p>
+      <p id="remove-note" class="note"></p>
+      <label class="check" id="remove-files-row">
+        <input type="checkbox" id="remove-files">
+        <span>Also delete the downloaded files from the server</span>
+      </label>
+      <div class="dialog-actions">
+        <button value="cancel" class="btn quiet">Keep it</button>
+        <button type="button" class="btn danger" id="remove-confirm">Remove</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
