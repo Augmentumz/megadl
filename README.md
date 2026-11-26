@@ -1,182 +1,77 @@
 # MegaDL
 
-A self-hosted web GUI for downloading **mega.nz** links straight onto your Unraid server.
+Download **mega.nz** links straight onto your Unraid server from a web page.
 
-- Paste one link or a whole pile of text. MegaDL picks out every `mega.nz` file and folder link, in both the new (`/file/…#key`, `/folder/…#key`) and old (`#!…`, `#F!…`) formats.
-- **Choose where downloads go.** A folder browser over your shares lets you pick or create the destination for each batch, and you can set a default folder.
-- **Choose files inside folders.** Expand a folder download to see its files and subfolders, and untick anything you don't want. Add a folder with **Start paused** to choose before anything downloads.
-- **Play, pause and remove** each download. Folder links are handled as one item, so pausing a folder pauses every file in it. There's also Retry for failed downloads, plus Pause all, Resume all and Clear finished.
-- **Speed limit.** Change it from the menu in the top bar or set an exact value in Settings. You can also set the number of connections per download.
-- **Sign in to your MEGA account** (two-factor codes work) so downloads use your account's transfer quota instead of the small anonymous one. The session survives restarts.
-- **Survives restarts.** Unfinished downloads resume, or are queued again automatically.
-- **Unraid-friendly files.** Downloads are owned by `nobody:users` with 666/777 permissions, so they show up over SMB.
-- An optional sign-in page for the web GUI, a light/dark theme that follows your system, and a layout that works on phones.
+Paste a MEGA link, pick a folder on your shares, and MegaDL downloads it in the background. Under the hood it uses **MEGAcmd**, MEGA's official command-line client, which handles MEGA's encryption, transfer quotas and resuming.
 
-Under the hood it runs **MEGAcmd**, MEGA's official command-line client, which handles MEGA's encryption, quotas and resuming. MegaDL adds the GUI and the download management on top.
+## What it does
 
----
+- **Downloads file and folder links.** Paste one link or a whole block of text. MegaDL finds every `mega.nz` link in it, old or new format, including password-protected links.
+- **Saves where you choose.** Browse your shares, create folders, and set a default download folder.
+- **Lets you pick files inside folders.** Open a folder download to see its files and subfolders, and untick anything you don't want. Add a folder with **Start paused** to choose before anything downloads.
+- **Play, pause, retry and remove** each download, or use **Pause all**, **Resume all** and **Clear finished**. Removing can also delete the downloaded files.
+- **Limits download speed**, from the top bar or in Settings.
+- **Signs in to your MEGA account**, with two-factor codes supported, so downloads use your account's transfer quota instead of the small anonymous one.
+- **Keeps going after restarts.** Unfinished downloads pick up again on their own.
+- **Saves files your shares can read.** Downloads belong to `nobody:users`, so they show up over SMB like any other file.
+- **Optional sign-in page** to protect the web GUI with a password.
 
 ## Install on Unraid
 
-There are two ways to do it. **Option A** is recommended: GitHub builds the image for you, and Unraid's Docker tab can then update it like any other app.
-
-### Option A: publish to GitHub (recommended)
-
-1. **Create a GitHub repository** named `megadl` and push this folder to it:
-
-   ```bash
-   cd megadl
-   sed -i 's/YOUR_GITHUB_USERNAME/your-github-name/g' unraid/megadl.xml   # lowercase!
-   git init && git add . && git commit -m "MegaDL"
-   git branch -M main
-   git remote add origin https://github.com/your-github-name/megadl.git
-   git push -u origin main
-   ```
-
-2. **Wait for the image to build.** The included workflow (`.github/workflows/docker-publish.yml`) builds and publishes `ghcr.io/your-github-name/megadl:latest`. Watch progress in the repository's **Actions** tab; it takes about five minutes.
-
-3. **Make the image public.** On GitHub, open your profile, go to **Packages**, choose **megadl**, then **Package settings**, and under **Change visibility** select **Public**. This lets Unraid pull the image without logging in.
-
-4. **Add the template to Unraid.** In the Unraid web UI, open **Terminal** and run:
+1. **Add the template.** In the Unraid web UI, open **Terminal** (the `>_` icon, top right) and run:
 
    ```bash
    curl -fsSL -o /boot/config/plugins/dockerMan/templates-user/my-MegaDL.xml \
-     https://raw.githubusercontent.com/your-github-name/megadl/main/unraid/megadl.xml
+     https://raw.githubusercontent.com/augmentumz/megadl/main/unraid/megadl.xml
    ```
 
-5. Go to **Docker**, click **Add Container**, and choose **MegaDL** from the **Template** list. Check the paths, then click **Apply**.
+2. **Create the container.** Go to **Docker**, click **Add Container**, and choose **MegaDL** from the **Template** list.
 
-6. Click the MegaDL icon and choose **WebUI**.
+3. **Check the settings** (the defaults work for most setups) and click **Apply**:
 
-The workflow also rebuilds every Monday, so the image keeps up with new MEGAcmd releases. Unraid will show "update ready" when there's a new build.
+   | Setting | Default | What it's for |
+   |---|---|---|
+   | Web GUI port | `8095` | Port for the web page. Pick another if something else uses it. |
+   | Downloads root | `/mnt/user/` | The part of your server MegaDL can browse and save into. |
+   | Default download folder | `downloads` | Where downloads go unless you pick another folder. Created if missing. |
+   | Web GUI password | empty | Set one to show a sign-in page (user name `admin`, changeable under **Show more settings**). |
+   | Host path label | `/mnt/user` | Display only. Set it to the same path as Downloads root so the GUI shows real paths. |
+   | Appdata | `/mnt/user/appdata/megadl` | Download list, settings and your MEGA session. |
 
-### Option B: build it on the Unraid server (no GitHub)
+   More settings (PUID/PGID, UMASK, file permissions) are under **Show more settings**. The defaults suit Unraid.
 
-1. Copy this folder to your server, for example to `/mnt/user/appdata/megadl-src` over SMB.
-2. In the Unraid **Terminal**:
+4. **Open it.** Click the MegaDL icon on the Docker tab and choose **WebUI**, or go to `http://YOUR-SERVER-IP:8095`.
 
-   ```bash
-   cd /mnt/user/appdata/megadl-src
-   docker build -t megadl:latest .
-   bash unraid/install-template.sh unraid/megadl.xml
-   ```
+### Updating
 
-3. Go to **Docker**, click **Add Container**, choose **MegaDL**, change **Repository** to `megadl:latest`, and click **Apply**.
-
-Unraid can't check a locally built image for updates; it will say "not available", which is expected. To update MEGAcmd later, run `docker build --no-cache -t megadl:latest .` again, then restart the container.
-
----
-
-## Template settings
-
-| Setting | Container side | Default | What it does |
-|---|---|---|---|
-| Web GUI port | `8080` | `8080` | Port for the web interface. |
-| Downloads root | `/data` | `/mnt/user/` | The part of the server MegaDL can browse and save into. `/mnt/user/` gives access to all shares; point it at one share to restrict it. |
-| Default download folder | `DEFAULT_DOWNLOAD_DIR` | `downloads` | Folder inside the downloads root used when you don't pick one. It's created if it's missing, which on Unraid creates a `downloads` share. You can change it in Settings. |
-| Web GUI password | `WEBUI_PASSWORD` | empty | When set, MegaDL shows a sign-in page (user name `WEBUI_USER`, default `admin`). The password is sent once, then the browser keeps a sign-in cookie for up to 30 days. Changing the password signs everyone out. |
-| Appdata | `/config` | `/mnt/user/appdata/megadl` | The download list, settings, logs and MEGA session. |
-| Host path label | `HOST_PATH_LABEL` | `/mnt/user` | Display only. Set it to the same host path as Downloads root so the GUI shows real paths. |
-| PUID / PGID | | `99` / `100` | The user and group that own downloaded files (`nobody:users`). |
-| UMASK | | `000` | umask for files the app creates. |
-| File / folder permissions | `FILE_PERMISSIONS` / `FOLDER_PERMISSIONS` | `666` / `777` | Permissions MEGAcmd gives new files and folders. MEGAcmd's own default is 600/700, which would hide downloads from SMB users. |
-
-Less common options: `POLL_INTERVAL` (seconds between progress updates, default `1.5`), `RECOVERY_GRACE_SECONDS` (how long to wait after a restart before re-queuing unfinished downloads, default `60`), and `LOG_LEVEL` (`INFO` or `DEBUG`).
-
----
+GitHub rebuilds the MegaDL image whenever the code changes, and every Monday to pick up new MEGAcmd releases. When Unraid shows **update ready** next to MegaDL, click it to apply. If nothing shows up, turn on **Advanced View** on the Docker tab and click **force update**.
 
 ## Using it
 
-**Add downloads.** Paste links into the box (Ctrl/Cmd+Enter also submits), check the **Save to** folder, and click **Add downloads**. Click the folder path to browse your shares or create a new folder. For password-protected links, click **Link has a password?** and enter it; it's used for every link in that batch.
+1. **Add downloads:** paste links into the box, check the **Save to** folder (click it to choose another), and click **Add downloads**. For a password-protected link, click **Link has a password?** first.
+2. **Choose files in a folder:** click the arrow next to a folder download. Unticked files are held back, and dropped once the ticked files have finished. You can re-tick them until then.
+3. **Control downloads:** use the play/pause and trash buttons on each row.
+4. **Limit speed:** pick a value from **Limit** in the top bar, or choose **Custom…** to type an exact one.
+5. **Use your MEGA account:** sign in on the **Account** tab. Public links work without an account, but MEGA limits anonymous transfers.
 
-**Download states**
-
-| State | Meaning |
-|---|---|
-| Queued | Waiting to be handed to MEGAcmd. Links are handed over one at a time. |
-| Starting / Reading folder | MEGAcmd is opening the link. Large folders can take a moment. |
-| Waiting for a free slot | MEGAcmd runs a few transfers at once; this one starts when a slot frees up. |
-| Downloading | In progress, with speed and time left. |
-| Retrying | MEGA paused the transfer, usually because the transfer quota ran out or the connection dropped. It continues on its own. |
-| Paused | Paused by you. Press play to continue. |
-| Done | Finished. |
-| Failed | Something went wrong. The reason is shown; press Retry to try again. |
-
-**Choose which files of a folder to download.** Click the arrow next to a folder download (or its name) to open its file list. Untick files or whole subfolders you don't want. Unticked files are held back, not deleted, so you can tick them again while the download is still running. When everything ticked has finished, the download is marked done and the unticked files are dropped. Files that have already finished can't be unticked.
-
-To choose before anything downloads, tick **Start paused** when adding the link, open the folder once MEGAcmd has listed its files, untick what you don't want, then press play.
-
-**Remove a download** with the trash button. You can also tick **Also delete the downloaded files from the server**. MegaDL only offers this for files or folders it created itself, never for something that was already in the folder before the download started.
-
-**Speed limit.** Pick a preset from **Limit** in the top bar, or choose **Custom…** to type an exact value in Settings. The limit applies to all downloads combined.
-
-**MEGA account.** Sign in on the **Account** tab. Public links download fine without an account, but MEGA limits how much anonymous users can transfer. If your account uses two-factor authentication, enter the current code with your password. Signing out stops downloads that are in progress.
-
----
+A download showing **Retrying** usually means MEGA's transfer quota ran out. It continues on its own once quota is available.
 
 ## Troubleshooting
 
-**Where are the logs?**
-- Container log: on the Docker tab, click the MegaDL icon and choose **Logs**.
-- MEGAcmd's own log: `appdata/megadl/.megaCmd/megacmdserver.log` (plus `.log.out` and `.log.err`).
+- **Logs:** container log on the Docker tab (MegaDL icon, then **Logs**). MEGAcmd's own log is `appdata/megadl/.megaCmd/megacmdserver.log`.
+- **"MEGAcmd didn't start":** change the Appdata path to your pool directly, for example `/mnt/cache/appdata/megadl`.
+- **Files not visible over SMB:** keep PUID/PGID at `99`/`100` and file/folder permissions at `666`/`777`.
+- **Connection keeps dropping over a VPN** (for example UniFi WiFiman): your router's security scanner may be blocking it. Remove the block in the router's security settings, or move MegaDL to another port.
+- **MEGA sign-in fails with the right password:** MEGAcmd can't handle passwords that start with a quote, or that contain `"` together with spaces.
 
-**The banner says "MEGAcmd didn't start".** MEGAcmd needs a unix socket and file locks in `/config/.megaCmd`. If your appdata share goes through Unraid's FUSE layer, change the Appdata path to the pool directly (for example `/mnt/cache/appdata/megadl`) or make the appdata share exclusive.
+## How it's built
 
-**Downloads sit on "Retrying".** This is almost always MEGA's transfer quota. Sign in with an account that has quota left, or wait. MEGAcmd resumes on its own when quota frees up.
-
-**I can't see the files over SMB.** Check that PUID/PGID are `99`/`100` and the file and folder permissions are `666`/`777`. Files downloaded before you changed these keep their old permissions; on Unraid, run **Tools > New Permissions** on the share to fix them.
-
-**Sign-in fails although the password is right.** MEGAcmd can't handle passwords that start with a quote, or that contain a `"` together with spaces. Change the password on mega.nz, or sign in with a password without those characters.
-
-**MegaDL keeps losing its connection over a VPN (for example UniFi WiFiman/Teleport).** Your router's security scanner (UniFi CyberSecure/IPS) may be blocking the connection. Older MegaDL versions sent the password with every request, which those scanners flag. Update MegaDL, then remove the block in the router's security settings or move MegaDL to another port.
-
-**I want to save to Unassigned Devices.** Set Downloads root to `/mnt/` with access mode **RW/Slave**, and set Host path label to `/mnt`.
-
----
-
-## How it works
-
-```
-Browser ──HTTP──▶ MegaDL (Python/Flask) ──runs──▶ mega-get, mega-transfers, mega-speedlimit, …
-                     │                                   │ unix socket
-                     │ SQLite: jobs + settings           ▼
-                     └──────────────────────────▶ mega-cmd-server (MEGAcmd) ──▶ MEGA
-```
-
-- MEGAcmd's commands start `mega-cmd-server` automatically when it isn't running. MegaDL notices when that server restarts and picks up from there. MEGAcmd's session lives in `/config/.megaCmd`, so you stay signed in.
-- Each link is queued with `mega-get -q`. MEGAcmd reports one transfer per file, so MegaDL groups them back into one download per link: it remembers the highest transfer number before queuing a link, and the first new transfer inside the chosen folder reveals the file or folder name.
-- Progress comes from `mega-transfers` every 1.5 seconds. Pause, resume and remove map to `mega-transfers -p/-r/-c` on every file of the download. If a folder download is paused while MEGAcmd is still adding its files, newly added files are paused too.
-- After a restart, MegaDL gives MEGAcmd a minute to resume its own cached transfers (it does this when signed in), then re-queues anything still missing.
-
-## Development
-
-You can run the app on any machine with Python 3.9+ and Flask, using the included **fake MEGAcmd** (`dev/mock-megacmd`). It imitates MEGAcmd's output, so you can work on the GUI without a MEGA connection:
-
-```bash
-mkdir -p /tmp/megadl/config /tmp/megadl/data/downloads
-cd app
-DOWNLOAD_ROOT=/tmp/megadl/data CONFIG_DIR=/tmp/megadl/config \
-MEGACMD_BIN_DIR="$PWD/../dev/mock-megacmd" DEFAULT_DOWNLOAD_DIR=downloads \
-python3 -m megadl
-# open http://localhost:8080
-```
-
-Words in a link control the fake: `bad` makes the link fail, `fail` makes the transfer fail partway, `quota` holds it in Retrying for 20 seconds, `tiny` finishes instantly, and `/folder/` produces a folder with three files. For example: `https://mega.nz/folder/test#key`.
-
-Project layout:
-
-```
-Dockerfile, docker/entrypoint.sh   image: Debian 12 + MEGAcmd + the app, runs as PUID/PGID
-app/megadl/megacmd.py              wrapper around the mega-* commands and their output
-app/megadl/manager.py              queue, progress tracking, pause/resume/remove, restart recovery
-app/megadl/web.py                  JSON API + static GUI
-app/megadl/static/                 the GUI (plain HTML/CSS/JS, no build step)
-unraid/megadl.xml                  Unraid template
-.github/workflows/                 builds and publishes the image to GHCR
-```
+- `app/` is the web app (Python/Flask plus plain HTML/CSS/JS). It runs MEGAcmd's commands and keeps the download list in `/config`.
+- `Dockerfile` and `docker/entrypoint.sh` build the image: Debian 12, MEGAcmd from MEGA's package repository, and the app, running as PUID/PGID.
+- `unraid/megadl.xml` is the Unraid template.
+- `.github/workflows/docker-publish.yml` builds the image and publishes it to `ghcr.io/augmentumz/megadl`. The package must be set to **Public** on GitHub so Unraid can download it.
+- `dev/mock-megacmd/` is a fake MEGAcmd for testing the GUI without a MEGA connection.
 
 ## Notes
 
-- MegaDL is not affiliated with MEGA. Only download content you have the right to download, and follow MEGA's terms of service.
-- MEGAcmd is © Mega Limited and is installed from MEGA's official package repository when the image is built. It is distributed under its own BSD-style license.
-- The bundled Fira Sans font is licensed under the SIL Open Font License (`app/megadl/static/fonts/OFL.txt`).
+MegaDL is not affiliated with MEGA. Only download content you have the right to download, and follow MEGA's terms of service. MEGAcmd is © Mega Limited and is distributed under its own BSD-style license. The bundled Fira Sans font is licensed under the SIL Open Font License.
